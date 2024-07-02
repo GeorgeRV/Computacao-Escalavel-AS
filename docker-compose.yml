@@ -1,0 +1,58 @@
+services:
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    restart: always
+
+  redis:
+    image: 'redis:latest'
+    ports:
+      - '6379:6379'
+
+  web:
+    build: .
+    command: flask run --host=0.0.0.0 --port=5000
+    volumes:
+      - .:/app
+    ports:
+      - '5000:5000'
+    environment:
+      FLASK_ENV: development
+      FLASK_APP: dashboard/app.py
+      PYTHONPATH: /app
+    depends_on:
+      - rabbitmq
+      - redis
+
+  worker:
+    build: .
+    container_name: worker
+    command: celery -A budget_simulator.budget_calculator worker --loglevel=info --pool=solo 
+    volumes:
+      - .:/app
+    depends_on:
+      - rabbitmq
+      - redis
+    environment:
+      - CELERY_BROKER_URL=amqp://guest@rabbitmq//
+      - CELERY_RESULT_BACKEND=rpc://
+      - PYTHONPATH=/app    
+
+  delivery_generator:
+    build: .
+    container_name: delivery_generator
+    command: python delivery_simulator/delivery_generator.py
+    volumes:
+      - .:/app
+    depends_on:
+      - rabbitmq
+    environment:
+      - CELERY_BROKER_URL=amqp://guest@rabbitmq//
+      - CELERY_RESULT_BACKEND=rpc://
+      - PYTHONPATH=/app
