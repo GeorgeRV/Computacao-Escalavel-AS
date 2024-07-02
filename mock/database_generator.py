@@ -1,6 +1,6 @@
 import os
 from dataclasses import dataclass
-from random import choice
+from random import choice, shuffle, random, randint
 import models
 import sqlite3
 
@@ -50,6 +50,16 @@ stock_create = '''
             )
         '''
 
+neighbors_create = '''
+            CREATE TABLE neighbors (
+                neighborhood1_id TEXT,
+                neighborhood2_id TEXT,
+                distance INT,
+                PRIMARY KEY (neighborhood1_id, neighborhood2_id)
+            )
+        '''
+
+
 neighborhood_insert = '''
         INSERT INTO neighborhood (id, name)
         VALUES (?, ?)
@@ -75,8 +85,13 @@ stock_insert = '''
         VALUES (?, ?, ?)
     '''
 
-create = {'neighborhood': neighborhood_create, 'user': user_create, 'product': product_create, 'store': store_create, 'stock': stock_create}
-insert = {'neighborhood': neighborhood_insert, 'user': user_insert, 'product': product_insert, 'store': store_insert, 'stock': stock_insert}
+neighbors_insert = '''
+        INSERT INTO neighbors (neighborhood1_id, neighborhood2_id, distance)
+        VALUES (?, ?, ?)
+    '''
+
+create = {'neighborhood': neighborhood_create, 'user': user_create, 'product': product_create, 'store': store_create, 'stock': stock_create, 'neighbors': neighbors_create}
+insert = {'neighborhood': neighborhood_insert, 'user': user_insert, 'product': product_insert, 'store': store_insert, 'stock': stock_insert, 'neighbors': neighbors_insert}
 
 @dataclass
 class DatabaseGeneratorParams:
@@ -88,26 +103,23 @@ class DatabaseGeneratorParams:
 
 class DatabaseGenerator:
     params: DatabaseGeneratorParams
-    cycle: int
-    silent: bool = True
 
-    def __init__(self, params: DatabaseGeneratorParams, silent: bool = True):
-        self.cycle = 0
+    def __init__(self, params: DatabaseGeneratorParams):
         self.params = params
-        self.silent = silent
         self.neighborhoods = []
         self.neighborhood_ids = []
         self.users = []
-        self.user_ids = [] #Apagar
         self.stores = []
         self.store_ids = []
         self.products = []
         self.product_ids = []
         self.stock = {}
+        self.neighbors = []
+        self.egdes = []
 
-        self.folder_name = "mock/mock_files"
+        self.folder_name = "mock_files"
         self.subfolder_sqlite3 = "sqlite3"
-        self.sqlite3_file_names = ["neighborhood.sqlite3", "users.sqlite3", "store.sqlite3", "products.sqlite3", "stock.sqlite3", ]
+        self.sqlite3_file_names = ["neighborhood.sqlite3", "user.sqlite3", "store.sqlite3", "product.sqlite3", "stock.sqlite3", "neighbors.sqlite3"]
         self.sqlite3_complete_path = [f"{self.folder_name}/{self.subfolder_sqlite3}/{file_name}" for file_name in self.sqlite3_file_names]
 
         # If the folder exists, delete its contents
@@ -146,6 +158,8 @@ class DatabaseGenerator:
             for product in self.product_ids:
                 self.__generate_stock(product, store, self.params.qtd_stock_initial)
 
+        self.__generate_neighbors()
+
     
     def run(self):
          # Report users, products and stocks created, creating the new data bases
@@ -163,6 +177,9 @@ class DatabaseGenerator:
 
         content_stock = [[store_product_id[1], store_product_id[0], quantity] for store_product_id, quantity in self.stock.items()]
         self.__connect('stock', 4, content_stock)
+
+        content_neighbors = [[neighbors.neighborhood1_id, neighbors.neighborhood2_id, neighbors.distance] for neighbors in self.neighbors]
+        self.__connect('neighbors', 5, content_neighbors)
 
 
     def __connect(self, data_type, index, content):
@@ -198,7 +215,6 @@ class DatabaseGenerator:
     def __generate_user(self):
         neighborhood_id = choice(self.neighborhood_ids)
         user = models.generate_user(neighborhood_id)
-        self.user_ids.append(user.id) # Apagar
         self.users.append(user)
 
     def __generate_store(self):
@@ -216,3 +232,32 @@ class DatabaseGenerator:
         stock_product = models.generate_stock(product_id, store_id, quantity)
         key = (stock_product.id_store, stock_product.id_product)
         self.stock[key] = stock_product.quantity  
+
+    def __generate_neighbors(self):
+        nodes = self.neighborhood_ids.copy()
+        shuffle(nodes)
+        num_neighbots = len(nodes)
+
+        # Garantir que o grafo seja conexo conectando todos os bairros em uma árvore mínima
+        for i in range(num_neighbots - 1):
+            self.__add_neighbors(nodes, i, i + 1)
+
+        # Adicionar arestas adicionais para aumentar a conectividade
+        for i in range(num_neighbots):
+            for j in range(i + 1, num_neighbots):
+                porcentage = choice([1,2,3]) / num_neighbots    # Para um bairro ter entre 2 a 4 vizinhos aproximadamente
+                if not self.__has_edge(nodes[i], nodes[j]) and random() < porcentage:  
+                    self.__add_neighbors(nodes, i, j)
+                    
+    def __add_neighbors(self, nodes, i, j):
+        weight = randint(1, 10)
+        neighbors = models.Neighbors(nodes[i], nodes[j], weight)
+        self.egdes.append({'node1': nodes[i], 'node2': nodes[j]})
+        self.neighbors.append(neighbors)
+        
+    def __has_edge(self, node1, node2):
+        # Verificar se já existe uma aresta entre node1 e node2
+        for edge in self.egdes:
+            if (edge['node1'] == node1 and edge['node2'] == node2) or (edge['node1'] == node2 and edge['node2'] == node1):
+                return True
+        return False

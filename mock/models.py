@@ -36,6 +36,12 @@ class Stock:
     id_store: str
     quantity: int
 
+@dataclass
+class Neighbors:
+    neighborhood1_id: str
+    neighborhood2_id: str
+    distance: int
+
 
 # Singleton decorator
 def singleton(cls):
@@ -85,7 +91,7 @@ def generate_store(neighborhood_id):
         cnpj=faker.cnpj(),
         name=faker.company(),
         neighborhood_id = neighborhood_id,
-        weight_fee= faker.pyfloat(left_digits=1, right_digits=1, positive=True, min_value=0.5, max_value=2)
+        weight_fee= round(faker.pyfloat(left_digits=1, right_digits=1, positive=True, min_value=0.5, max_value=2),1)
     )
 
 def generate_product():
@@ -100,9 +106,17 @@ def generate_product():
     )
 
 def generate_stock(product_id: str, store_id: str, quantity: int):
-    """Generates a Stock dataclass instance with unique data."""
+    """Generates a Stock dataclass instance."""
     return Stock(
         id_product=product_id,
         id_store=store_id,
         quantity=quantity,
+    )
+
+def generate_neighbors(neighborhood1_id, neighborhood2_id, distance):
+    """Generates a Neighbors dataclass instance with unique data."""
+    return Neighbors(
+        neighborhood1_id = neighborhood1_id,
+        neighborhood2_id = neighborhood2_id,
+        distance = distance
     )
