@@ -16,19 +16,28 @@ services:
       - '6379:6379'
 
   web:
-    build: .
-    command: flask run --host=0.0.0.0 --port=5000
-    volumes:
-      - .:/app
+    build:
+      context: .
+    command: python dashboard/app.py
     ports:
-      - '5000:5000'
+      - '8050:8050'
     environment:
-      FLASK_ENV: development
-      FLASK_APP: dashboard/app.py
       PYTHONPATH: /app
     depends_on:
       - rabbitmq
       - redis
+
+  database_generator:
+    build: .
+    container_name: database_generator
+    command: python mock/main.py
+    volumes:
+      - .:/app
+    depends_on:
+      - rabbitmq
+      - redis
+    environment:
+      - PYTHONPATH=/app
 
   worker:
     build: .
@@ -39,6 +48,7 @@ services:
     depends_on:
       - rabbitmq
       - redis
+      - database_generator
     environment:
       - CELERY_BROKER_URL=amqp://guest@rabbitmq//
       - CELERY_RESULT_BACKEND=rpc://
@@ -52,6 +62,8 @@ services:
       - .:/app
     depends_on:
       - rabbitmq
+      - database_generator
+      - worker
     environment:
       - CELERY_BROKER_URL=amqp://guest@rabbitmq//
       - CELERY_RESULT_BACKEND=rpc://

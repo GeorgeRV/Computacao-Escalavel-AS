@@ -2,9 +2,12 @@ import sqlite3
 from dataclasses import dataclass
 from random import choice, randint
 from datetime import datetime, timedelta
-from budget_simulator.budget_calculator import calculate_budget
-from json import dumps
-
+from budget_simulator.budget_calculator import calculate_budget, recive_order
+from json import dumps, loads
+import multiprocessing
+import time
+import random
+from faker import Faker
 
 @dataclass
 class DeliveryParams:
@@ -28,6 +31,8 @@ class Delivery:
 
         self.ids_list = []
 
+        self.fake = Faker()
+
         for index, path in enumerate(self.sqlite3_complete_path):
             conn = sqlite3.connect(path)
             cursor = conn.cursor()
@@ -42,45 +47,87 @@ class Delivery:
 
     def run(self):
 
-        for _ in range(self.params.num_deliveries):
-            self.generate_delivery()
+        num_processes = multiprocessing.cpu_count()
+        processes = []
 
-        
+        for _ in range(num_processes):
+            process = multiprocessing.Process(target=self.__generate_delivery)
+            processes.append(process)
+            process.start()
 
-    def generate_delivery(self):
+        # Aguardar até que todos os processos terminem
+        for process in processes:
+            process.join()
+
+    def __generate_delivery(self):
         # Implementação da função de geração de entrega
-        delivery_data = self.__create_order()
 
-        delivery_data_json = dumps(delivery_data)
+        result = self.__send_budget()
         
-        # Chamar a função de cálculo do orçamento de forma assíncrona
-        calculate_budget.delay(delivery_data_json)
-    
-        print(delivery_data_json)
+        result = result.get(timeout=60)
 
+        print(f"O orçamento recebido é {result}")
+
+        self.__send_order(result)
+
+    def __send_budget(self):
+        time.sleep(random.randint(5, 15))
+
+        delivery_data = self.__create_order()
+        delivery_data_json = dumps(delivery_data)
+
+        print(delivery_data_json)
         print(delivery_data)
         
-        # Fazer algo com o resultado, se necessário
-        #result = result.get(timeout=10)
+        # Chamar a função de cálculo do orçamento de forma assíncrona
+        result = calculate_budget.delay(delivery_data_json)
+
+        return result
+    
+    def __send_order(self, result):
+        time.sleep(random.randint(15, 25))  # Tempo simulado para aprovar ou não o orçamento
         
-        #return delivery_data
+        budget_result = loads(result)
+        
+        if random.random() < 0.5:
+            budget_result["state"] = "Aprovado"
+        else:
+            budget_result["state"] = "Reprovado"
+
+        budget_result_json = dumps(budget_result)
+
+        # Chamar a função de pedido de forma assíncrona
+        recive_order.delay(budget_result_json)
+
 
     def __create_order(self):
         user = choice(self.users_ids)
         store = choice(self.stores_ids)
         product = choice(self.products_ids)
         quantity = randint(self.params.min_qtd_order, self.params.max_qtd_order)
-        return {"id_user": user, "id_store": store, "id_product": product, "quantity": quantity, "state": "Criado"}
+        order_id = str(self.fake.uuid4())  # Gerar um ID único
+        order_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")  # Obter a data atual formatada
+        
+        return {
+            "id": order_id,
+            "date": order_date,
+            "id_user": user,
+            "id_store": store,
+            "id_product": product,
+            "quantity": quantity,
+            "state": "Criado",
+            "price": ""
+        }
 
   
 
 
 if __name__ == "__main__":
     params = DeliveryParams(
-            num_deliveries=2,
+            num_deliveries=20,
             min_qtd_order=1,
             max_qtd_order=10  
         )
 
-    oi = Delivery(params)
-    oi.run()
+    delivery = Delivery(params)
+    delivery.run()
